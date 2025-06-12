@@ -5,7 +5,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # === Parameters ===
-URL = 'https://www.espn.com/golf/leaderboard/_/tournamentId/401580355'
+URL = 'https://www.espn.com/golf/leaderboard/_/tournamentId/401703515'
 GOOGLE_SHEET_NAME = 'Golf_Majors_Gamblor'
 SHEET_NAME = 'TOURNAMENT_LEADERBOARDS'
 PAR = 70
@@ -68,12 +68,20 @@ def round_in_progress(leaderboard, round_col):
     return 0 < num_valid < total
 
 def round_complete(leaderboard, round_col):
-    invalid_values = {'--', '', None, 'CUT', 'WD', 'DQ', '—'}
-    if round_col not in leaderboard.columns:
+    invalid_values = {'--', '', None, '—'}
+    if round_col not in leaderboard.columns or 'SCORE' not in leaderboard.columns:
         return False
+
     scores = leaderboard[round_col].astype(str).str.strip()
-    # Complete if no blanks or placeholders
-    return all(score not in {'--', '', None} for score in scores)
+    score_status = leaderboard['SCORE'].astype(str).str.strip().str.upper()
+
+    # Round is complete if each player:
+    # - Has a valid score
+    # - OR is marked as CUT (so they won’t have a score)
+    for s, status in zip(scores, score_status):
+        if s in invalid_values and status != 'CUT':
+            return False
+    return True
 
 def update_sheet():
     leaderboard = fetch_scores()
