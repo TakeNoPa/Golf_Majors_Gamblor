@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "golf-majors-gamblor",
+  "private_key_id": "295fa96e55c31f2cb25fa347ee4bcbfd2cf1b614",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDlFPYd/1j79mw5\nRASPIPgQr7ZhV/bhCV6rl6eI4jh3wKsA30yDKhBrSQG9tfELYbdUGzPz7TUX4PR0\nND/vMJKbdm57rQ9sRAjkba+E80Le2P4iJGN/oOcxSNSOGBrhvxRJim6mDXgRB8s3\nu+GUOeAkMPjiBehkdMNQxM3+v/S9AUR+K245eWwnIbO8lobVMv0DVZa45SNO7wGB\ndw9+rfINQTBAN4gP+5YxQsVFmX8RkvJcuBZjz8MCx2UI8b6Sy96wGXArgPiUUK9l\nd6yiHs75Bysbeqm+fkMhmTM0l5GCkxrGzS2kES+2PoAGgzkjG3F45BALndPGfcu+\nK11YmmFZAgMBAAECggEABEF27wi63PdvfELcuNH6ecjh4P4S2oxjg1mOZbcaKHNe\nWeZMFBW4d13EWANkxnravofA19O8zEREFlKQK3/iAVxaYhbNdgvvhFrbS2N/hwdN\n9VFqvci98sbxF/CvsyjrFhCpzJDsfZiA+HiXkLrghJuaTAyjDBa1OC9nykdDoy01\nWpfH0PMt3R1lRY8OHu1S1h7qHDG8eiRVGCyuc4ISAABXOKZPPaP84jIenjUymbcB\nUGhiGuJhxIM7tEhBH55AoNCaL5z06JH57zYFjlcB/4WSBMlO0WU9yinC2DqyDhES\ndzcfx1A8tGuQAUYU76h8MTbID8j+6ntYHQ1F0akjzwKBgQDzB9xx1qJpKKtgSGM6\nlS4KTFxq1go8sdHv9BWIvOx4cG9xmOCVW+TB3TcaJFXq41Him13nNuZpdVL+rs9V\n+5+DZQSwQezmd8/ugTBX7AwY8K+eY5JpSihWHcWruGl8bkYu+5MmXHsvvYhJmIiN\nlCwFfWFXn0doAGgvJehrDB/+VwKBgQDxToox9Kk2cpSF7XSnMbudW6oq6sW7o8bq\nIDHE9L2wRFSWz2OWTTh3j92ov4dTOgHD3gMhjpVQ9Ct/KQu4NA74+rXrSYkG9idI\nr0zzs78p/RQLpQUJUl103hKbkU2q8co7vW9wAXVnmZ1qtyJC5mw/J1tXr7dP0B9e\ne5WA36xvzwKBgQCkZmP0ShoxgsZzamRdo76yTreRudrQ9gUrCfVrO0nHq19n+9+o\nibI0hl2Y/I12SHIDFdCu8Q9qtWgASuaMpptgOfyy8tW7jb8F+zRltZL1aBOU1Iyd\nVwH0R02JfUU2XC5z59DB+XuHbvH7vwhYpawlxowLxv551xSjGESh7WDTHwKBgCaK\nF7JA1CG5DRWSxjXJ0KAiOrxeALSmRKex+qDtQbp8P1JSzyH7NVCLLqi75j4ZnpyM\nwc1DO3/Rb30Arjl+PwHu8M0iUntFJyMJtG2bwKVRITl24qYJfJmkui4Ud+YcdeMy\nrzChWwHv299mXld2+8TeYU1Q6CMcJ1ZswITztFOrAoGBAK4+CoixCtHNHFjFpk5x\nGZJNwFxHPwO28Ian/aOQLW+uU7p8xNphofpNxG0Qbkdm0c8hL7TQvoOnwsBbHTS6\n6hwgqIcH6VLesj6zyKUY5KB6kK/O9gxoE8q6Nl/tvdveGmBn+0RZHIM7WctvnPE0\n8F62FFP0cLWl6E3urwXT2uc0\n-----END PRIVATE KEY-----\n",
+  "client_email": "gamblor@golf-majors-gamblor.iam.gserviceaccount.com",
+  "client_id": "113253657939014414194",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/gamblor%40golf-majors-gamblor.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
