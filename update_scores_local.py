@@ -5,7 +5,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # === Parameters ===
-URL = 'https://www.espn.com/golf/leaderboard/_/tournamentId/401703515'
+URL = 'https://www.espn.com/golf/leaderboard/_/tournamentId/401580355'
 GOOGLE_SHEET_NAME = 'Golf_Majors_Gamblor'
 SHEET_NAME = 'TOURNAMENT_LEADERBOARDS'
 PAR = 70
