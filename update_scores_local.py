@@ -5,14 +5,14 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # === Parameters ===
-URL = 'https://www.espn.com/golf/leaderboard/_/tournamentId/401580355'
+URL = 'https://www.espn.com/golf/leaderboard/_/tournamentId/401703515'
 GOOGLE_SHEET_NAME = 'Golf_Majors_Gamblor'
 SHEET_NAME = 'TOURNAMENT_LEADERBOARDS'
 PAR = 70
-COLUMN_OFFSET = 14  # 0-based index: Column 'O'
-SCORE_COL_START = 15  # 0-based index: Column 'P'
+COLUMN_OFFSET = 14  # Column 'O'
+SCORE_COL_START = 15  # Column 'P'
 BLOCK_SIZE = 7
-PARTICIPANT_START_ROW = 229  # 0-based: Excel 230
+PARTICIPANT_START_ROW = 229  # Row 230 in Excel
 ROUND_COLS = ['R1', 'R2', 'R3', 'R4']
 PARTICIPANTS = ['PAT', 'TADGH / TADHG', 'HAYES', 'JOE', 'COOKE', 'MACKEY', 'FITZ']
 
@@ -29,10 +29,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(me
 
 def fetch_scores():
     logging.info(f'Fetching scores from ESPN leaderboard: {URL}')
-    headers = {
-        'User-Agent': 'Mozilla/5.0',
-        'Accept-Language': 'en-US,en;q=0.9',
-    }
+    headers = {'User-Agent': 'Mozilla/5.0'}
     try:
         response = requests.get(URL, headers=headers)
         response.raise_for_status()
@@ -66,14 +63,29 @@ def update_sheet():
         return
 
     leaderboard_names = leaderboard['PLAYER'].tolist()
-    sheet_data = sheet.get_all_values()
-    
-    # Reset df to current sheet data to keep sync
+
     global df
+    sheet_data = sheet.get_all_values()
     df = pd.DataFrame(sheet_data[1:], columns=sheet_data[0])
 
-    participant_totals_day4 = []  # To hold (participant, total_score) for day 4
-    
+    # Determine started rounds
+    round_started = {i: False for i in range(4)}
+    for d, col in enumerate(ROUND_COLS):
+        if col in leaderboard.columns and any(str(x).strip().isdigit() for x in leaderboard[col]):
+            round_started[d] = True
+
+    use_score_for_r1 = False
+    if not round_started[0] and 'SCORE' in leaderboard.columns:
+        if any(str(x).strip().startswith(('-', '+', 'E')) for x in leaderboard['SCORE']):
+            round_started[0] = True
+            use_score_for_r1 = True
+
+    if not any(round_started.values()):
+        logging.info('No completed or in-progress rounds with scores found. Exiting without updating.')
+        return
+
+    participant_totals_day4 = []
+
     for p_index, participant in enumerate(PARTICIPANTS):
         start_row = PARTICIPANT_START_ROW + p_index * BLOCK_SIZE
         logging.info(f'\nProcessing {participant} (starts at row {start_row + 1})')
@@ -98,21 +110,26 @@ def update_sheet():
             cumulative_score = 0
 
             for d, col in enumerate(ROUND_COLS):
-                if col not in leaderboard.columns:
+                if not round_started[d]:
                     continue
-                score = lb_row[col]
-                if isinstance(score, str) and ('-' in score or score.upper() == 'CUT'):
-                    cut = True
-                    df.iat[row_idx - 1, SCORE_COL_START + d] = 'CUT'
-                else:
-                    try:
-                        s = int(score)
-                        over_under = s - PAR
-                        cumulative_score += over_under
-                        df.iat[row_idx - 1, SCORE_COL_START + d] = format_score(cumulative_score)
-                        day_scores[d].append(cumulative_score)
-                    except:
-                        df.iat[row_idx - 1, SCORE_COL_START + d] = ''
+
+                score_value = lb_row['SCORE'] if (d == 0 and use_score_for_r1) else lb_row[col]
+
+                if isinstance(score_value, str) and score_value.upper() in ('CUT', 'WD', 'DQ'):
+                    if d >= 2:  # Only cut after R3/R4
+                        cut = True
+                        df.iat[row_idx - 1, SCORE_COL_START + d] = 'CUT'
+                    continue
+
+                try:
+                    s = int(score_value)
+                    over_under = s if (d == 0 and use_score_for_r1) else s - PAR
+                    cumulative_score += over_under
+                    df.iat[row_idx - 1, SCORE_COL_START + d] = format_score(cumulative_score)
+                    day_scores[d].append(cumulative_score)
+                except:
+                    df.iat[row_idx - 1, SCORE_COL_START + d] = ''
+
             if cut:
                 for future_day in range(d + 1, 4):
                     df.iat[row_idx - 1, SCORE_COL_START + future_day] = 'CUT'
@@ -120,45 +137,35 @@ def update_sheet():
         total_row = start_row + 6
         total_day4 = None
         for d in range(4):
+            if not round_started[d]:
+                df.iat[total_row - 1, SCORE_COL_START + d] = ''
+                continue
             scores = [v for v in day_scores[d] if isinstance(v, int)]
             if len(scores) >= 3:
                 total = sum(sorted(scores)[:3])
                 df.iat[total_row - 1, SCORE_COL_START + d] = format_score(total)
-                logging.info(f'Day {d+1} total for {participant}: {format_score(total)}')
                 if d == 3:
                     total_day4 = total
             else:
                 df.iat[total_row - 1, SCORE_COL_START + d] = ''
-                if d == 3:
-                    total_day4 = None
-        # Collect participant totals for day 4 to sort winners later
         if total_day4 is not None:
             participant_totals_day4.append((participant, total_day4))
 
-    # Sort participants by best total on day 4 (lowest first)
-    rankings = sorted(participant_totals_day4, key=lambda x: x[1])  # (participant, score)
+    rankings = sorted(participant_totals_day4, key=lambda x: x[1])
 
-    # Add winner's name only (no score) two rows above first participant, keep "WINNER:" prefix
-    winner_cell_row = PARTICIPANT_START_ROW - 2  # 0-based index
+    winner_cell_row = PARTICIPANT_START_ROW - 2
     winner_cell_col = COLUMN_OFFSET
-
-    current_value = df.iat[winner_cell_row - 1, winner_cell_col]  # Check existing cell text
+    current_value = df.iat[winner_cell_row - 1, winner_cell_col]
     winner_name = rankings[0][0] if rankings else ""
+    df.iat[winner_cell_row - 1, winner_cell_col] = f"WINNER: {winner_name}"
 
-    if current_value and "WINNER:" in current_value.upper():
-        df.iat[winner_cell_row - 1, winner_cell_col] = f"WINNER: {winner_name}"
-    else:
-        df.iat[winner_cell_row - 1, winner_cell_col] = f"WINNER: {winner_name}"
-
-    # Write 1st, 2nd, 3rd with name and score below participants
-    display_start_row = PARTICIPANT_START_ROW + BLOCK_SIZE * len(PARTICIPANTS) + 2  # Adjust as needed
+    display_start_row = PARTICIPANT_START_ROW + BLOCK_SIZE * len(PARTICIPANTS) + 2
     rank_suffix = ['ST', 'ND', 'RD']
     for i, (name, score) in enumerate(rankings[:3]):
         rank_str = f"{i+1}{rank_suffix[i]}"
         display_text = f"{rank_str}: {name} ({format_score(score)})"
         df.iat[display_start_row - 1 + i, winner_cell_col] = display_text
 
-    # Push back to Google Sheets
     sheet.clear()
     sheet.update([df.columns.values.tolist()] + df.values.tolist())
     logging.info('\n✅ Google Sheet updated!')
