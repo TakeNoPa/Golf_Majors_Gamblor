@@ -219,7 +219,7 @@ def update_sheet():
     # Push to Google Sheets
     sheet.clear()
     sheet.update([df.columns.values.tolist()] + df.values.tolist())
-    logging.info('\n✅ Google Sheet updated!')
+    logging.info('\n✅ Gamblor Scores Updated!')
 
 if __name__ == '__main__':
     update_sheet()
