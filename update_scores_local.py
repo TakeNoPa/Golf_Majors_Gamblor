@@ -9,8 +9,8 @@ URL = 'https://www.espn.com/golf/leaderboard/_/tournamentId/401703515'
 GOOGLE_SHEET_NAME = 'Golf_Majors_Gamblor'
 SHEET_NAME = 'TOURNAMENT_LEADERBOARDS'
 PAR = 70
-COLUMN_OFFSET = 14  # Column 'O'
-SCORE_COL_START = 15  # Column 'P'
+COLUMN_OFFSET = 20  # Column 'U'
+SCORE_COL_START = 21  # Column 'V'
 BLOCK_SIZE = 7
 PARTICIPANT_START_ROW = 229  # Row 230 in Excel
 ROUND_COLS = ['R1', 'R2', 'R3', 'R4']
@@ -249,7 +249,7 @@ def update_sheet():
     # Push to Google Sheets
     sheet.clear()
     sheet.update([df.columns.values.tolist()] + df.values.tolist())
-    logging.info('\n✅ Google Sheet updated!')
+    logging.info('\n✅ Gamblor Scores Updated!')
 
 
 if __name__ == '__main__':
