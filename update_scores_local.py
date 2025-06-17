@@ -14,7 +14,7 @@ SCORE_COL_START = 21  # Column 'V'
 BLOCK_SIZE = 7
 PARTICIPANT_START_ROW = 229  # Row 230 in Excel
 ROUND_COLS = ['R1', 'R2', 'R3', 'R4']
-PARTICIPANTS = ['PAT', 'TADGH / TADHG', 'HAYES', 'JOE', 'COOKE', 'MACKEY', 'FITZ']
+PARTICIPANTS = ['PAT', 'TADGH / TADHG', 'MACKEY', 'HAYES', 'JOE', 'COOKE', 'FITZ']
 
 # === Google Sheets Setup ===
 SCOPE = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
@@ -26,6 +26,7 @@ df = pd.DataFrame(data[1:], columns=data[0])
 
 # === Logging setup ===
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
+
 
 def fetch_scores():
     logging.info(f'Fetching scores from ESPN leaderboard: {URL}')
@@ -41,6 +42,7 @@ def fetch_scores():
         logging.error(f'Error fetching leaderboard: {e}')
         return None
 
+
 def find_best_match(name, leaderboard_names):
     import difflib
     last_name = name.split(',')[0].strip().lower() if ',' in name else name.split()[-1].lower()
@@ -54,8 +56,10 @@ def find_best_match(name, leaderboard_names):
             best_match = lb_name
     return best_match if best_ratio > 0.6 else None
 
+
 def format_score(score):
     return 'E' if score == 0 else f'+{score}' if score > 0 else str(score)
+
 
 def round_in_progress(leaderboard, round_col):
     invalid_values = {'--', '', None, 'CUT', 'WD', 'DQ', '—'}
@@ -64,37 +68,23 @@ def round_in_progress(leaderboard, round_col):
     scores = leaderboard[round_col].astype(str).str.strip()
     num_valid = scores.apply(lambda x: x not in invalid_values).sum()
     total = len(scores)
-    # In progress if some but not all have valid scores
     return 0 < num_valid < total
+
 
 def round_complete(leaderboard, round_col):
     invalid_values = {'--', '', None, '—'}
+    complete_statuses = {'CUT', 'WD', 'DQ'}
     if round_col not in leaderboard.columns or 'SCORE' not in leaderboard.columns:
         return False
 
     scores = leaderboard[round_col].astype(str).str.strip()
     score_status = leaderboard['SCORE'].astype(str).str.strip().str.upper()
 
-    # Round is complete if each player:
-    # - Has a valid score
-    # - OR is marked as CUT (so they won’t have a score)
     for s, status in zip(scores, score_status):
-        if s in invalid_values and status != 'CUT':
+        if s in invalid_values and status not in complete_statuses:
             return False
     return True
 
-def get_round_status(leaderboard):
-    round_status = {}
-    for col in ROUND_COLS:
-        complete = round_complete(leaderboard, col)
-        in_progress = round_in_progress(leaderboard, col)
-        if complete:
-            round_status[col] = 'complete'
-        elif in_progress:
-            round_status[col] = 'in_progress'
-        else:
-            round_status[col] = 'not_started'
-    return round_status
 
 def update_sheet():
     leaderboard = fetch_scores()
@@ -102,24 +92,24 @@ def update_sheet():
         return
 
     leaderboard.columns = [col.upper() for col in leaderboard.columns]
-    round_status = get_round_status(leaderboard)
-    logging.info(f"Detected round status: {round_status}")
-
     leaderboard_names = leaderboard['PLAYER'].tolist()
     sheet_data = sheet.get_all_values()
     global df
     df = pd.DataFrame(sheet_data[1:], columns=sheet_data[0])
+
+    round_status = {r: round_complete(leaderboard, r) for r in ROUND_COLS}
+    logging.info(f'✯ Round completion status: {round_status}')
 
     participant_totals_day4 = []
     found_any_scores = False
 
     for p_index, participant in enumerate(PARTICIPANTS):
         start_row = PARTICIPANT_START_ROW + p_index * BLOCK_SIZE
-        logging.info(f'\n🎯 Processing {participant} (starts at row {start_row + 1})')
+        logging.info(f'\n✯ Processing {participant} (starts at row {start_row + 1})')
 
         day_scores = {i: [] for i in range(4)}
 
-        for i in range(5):  # Each participant has 5 golfers
+        for i in range(5):  # 5 golfers per participant
             row_idx = start_row + 1 + i
             try:
                 name = df.iat[row_idx - 1, COLUMN_OFFSET]
@@ -134,80 +124,70 @@ def update_sheet():
                 continue
 
             lb_row = leaderboard[leaderboard['PLAYER'] == match].iloc[0]
-            cumulative_score = 0
             cut = False
-            prev_round_complete = True
+            cumulative_score = 0
 
             for d, col in enumerate(ROUND_COLS):
-                status = round_status[col]
-                col_idx = SCORE_COL_START + d
-
-                if not prev_round_complete:
-                    df.iat[row_idx - 1, col_idx] = ''
+                if d > 0 and not round_status.get(ROUND_COLS[d - 1], False):
+                    df.iat[row_idx - 1, SCORE_COL_START + d] = ''
                     continue
 
-                val = lb_row.get(col)
-                invalid_values = {'--', '', None, 'CUT', 'WD', 'DQ', '—'}
+                curr_round_complete = round_status.get(col, False)
+                curr_round_in_progress = not curr_round_complete and round_in_progress(leaderboard, col)
 
-                if status == 'not_started':
-                    df.iat[row_idx - 1, col_idx] = ''
-                    prev_round_complete = False
-                    continue
+                val = str(lb_row.get(col, '')).strip().upper()
+                status = str(lb_row.get('SCORE', '')).strip().upper()
+                invalid_values = {'--', '', None, '—'}
+                exit_codes = {'CUT', 'WD', 'DQ'}
 
-                if status == 'complete' and val not in invalid_values:
+                if curr_round_complete and val not in invalid_values and val not in exit_codes:
                     try:
-                        s = int(str(val).replace('*', ''))
+                        s = int(val)
                         over_under = s - PAR
                         cumulative_score += over_under
-                        df.iat[row_idx - 1, col_idx] = format_score(cumulative_score)
+                        df.iat[row_idx - 1, SCORE_COL_START + d] = format_score(cumulative_score)
                         day_scores[d].append(cumulative_score)
                         found_any_scores = True
-                        prev_round_complete = True
-                        logging.info(f"{name} {col}: {s} → {format_score(over_under)}")
+                        logging.info(f'{name} {col}: {s} → {format_score(over_under)}')
                         continue
                     except Exception:
-                        logging.warning(f"Invalid score in {col} for {name}: {val}")
-                        df.iat[row_idx - 1, col_idx] = ''
-                        prev_round_complete = False
+                        pass
+
+                elif curr_round_in_progress:
+                    if status in exit_codes:
+                        logging.info(f"{name} {col}: {status} — skipping further rounds.")
+                        df.iat[row_idx - 1, SCORE_COL_START + d] = status
+                        cut = True
+                        break
+                    try:
+                        if status == 'E':
+                            over_under = 0
+                        elif status.startswith(('+', '-')) or status.isdigit():
+                            over_under = int(status)
+                        else:
+                            raise ValueError()
+                        cumulative_score += over_under
+                        df.iat[row_idx - 1, SCORE_COL_START + d] = format_score(cumulative_score)
+                        day_scores[d].append(cumulative_score)
+                        found_any_scores = True
+                        continue
+                    except Exception:
+                        logging.warning(f"Invalid fallback SCORE for {name}: {status}")
+                        df.iat[row_idx - 1, SCORE_COL_START + d] = ''
                         continue
 
-                if status == 'in_progress':
-                    fallback = lb_row.get('SCORE')
-                    if isinstance(fallback, str):
-                        try:
-                            fb = fallback.strip().upper()
-                            over_under = 0 if fb == 'E' else int(fb)
-                            cumulative_score += over_under
-                            df.iat[row_idx - 1, col_idx] = format_score(cumulative_score)
-                            day_scores[d].append(cumulative_score)
-                            found_any_scores = True
-                            prev_round_complete = False
-                            logging.info(f"{name} {col} in progress: fallback SCORE {fb} → {format_score(over_under)}")
-                            continue
-                        except Exception:
-                            logging.warning(f"Could not parse fallback SCORE for {name}: {fallback}")
-                            df.iat[row_idx - 1, col_idx] = ''
-                            prev_round_complete = False
-                            continue
-                    else:
-                        df.iat[row_idx - 1, col_idx] = ''
-                        prev_round_complete = False
-                        continue
+                if col == 'R3' or col == 'R4':
+                    if round_status.get('R2', False) and val == 'CUT':
+                        df.iat[row_idx - 1, SCORE_COL_START + d] = 'CUT'
+                        cut = True
+                        break
 
-                if isinstance(val, str) and val.upper() == 'CUT' and d >= 2:
-                    df.iat[row_idx - 1, col_idx] = 'CUT'
-                    cut = True
-                    logging.info(f"{name} {col}: CUT")
-                    break
-
-                df.iat[row_idx - 1, col_idx] = ''
-                prev_round_complete = False
+                df.iat[row_idx - 1, SCORE_COL_START + d] = ''
 
             if cut:
                 for future_day in range(d + 1, 4):
                     df.iat[row_idx - 1, SCORE_COL_START + future_day] = 'CUT'
 
-        # Compute team totals
         total_row = start_row + 6
         total_day4 = None
         for d in range(4):
@@ -217,34 +197,35 @@ def update_sheet():
                 df.iat[total_row - 1, SCORE_COL_START + d] = format_score(total)
                 if d == 3:
                     total_day4 = total
-                logging.info(f"🏁 Day {d+1} total for {participant}: {format_score(total)}")
+                logging.info(f'🏁 Day {d+1} total for {participant}: {format_score(total)}')
             else:
                 df.iat[total_row - 1, SCORE_COL_START + d] = ''
-                if d == 3:
-                    total_day4 = None
 
         if total_day4 is not None:
             participant_totals_day4.append((participant, total_day4))
 
     if not found_any_scores:
-        logging.info("⚠️ No completed or in-progress scores found. Exiting.")
+        logging.info("⚠️ No completed rounds with scores found. Exiting without updating.")
         return
 
-    # Rankings
     rankings = sorted(participant_totals_day4, key=lambda x: x[1])
+
+    winner_cell_row = PARTICIPANT_START_ROW - 2
+    winner_cell_col = COLUMN_OFFSET
     winner_name = rankings[0][0] if rankings else ""
-    df.iat[PARTICIPANT_START_ROW - 3, COLUMN_OFFSET] = f"WINNER: {winner_name}"
+    df.iat[winner_cell_row - 1, winner_cell_col] = f"WINNER: {winner_name}"
 
     display_start_row = PARTICIPANT_START_ROW + BLOCK_SIZE * len(PARTICIPANTS) + 2
     rank_suffix = ['ST', 'ND', 'RD']
     for i, (name, score) in enumerate(rankings[:3]):
         rank_str = f"{i+1}{rank_suffix[i] if i < 3 else 'TH'}"
-        df.iat[display_start_row - 1 + i, COLUMN_OFFSET] = f"{rank_str}: {name} ({format_score(score)})"
+        display_text = f"{rank_str}: {name} ({format_score(score)})"
+        df.iat[display_start_row - 1 + i, winner_cell_col] = display_text
 
-    # Push to Google Sheets
     sheet.clear()
     sheet.update([df.columns.values.tolist()] + df.values.tolist())
-    logging.info('\n✅ Gamblor Scores Updated!')
+    logging.info('\n✅ Gamblor Scores Updated Successfully!')
+
 
 if __name__ == '__main__':
     update_sheet()
