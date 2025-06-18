@@ -5,12 +5,12 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # === Parameters ===
-URL = 'https://www.espn.com/golf/leaderboard/_/tournamentId/401703515'
+URL = 'https://www.espn.com/golf/leaderboard/_/tournamentId/401703516'
 GOOGLE_SHEET_NAME = 'Golf_Majors_Gamblor'
 SHEET_NAME = 'TOURNAMENT_LEADERBOARDS'
 PAR = 70
-COLUMN_OFFSET = 20  # Column 'U'
-SCORE_COL_START = 21  # Column 'V'
+COLUMN_OFFSET = 26  # Column 'AA' Add 6 Each Time (20, 26, 32)
+SCORE_COL_START = 27  # Column 'AB'
 BLOCK_SIZE = 7
 PARTICIPANT_START_ROW = 229  # Row 230 in Excel
 ROUND_COLS = ['R1', 'R2', 'R3', 'R4']
