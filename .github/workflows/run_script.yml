@@ -2,7 +2,7 @@ name: Run Gamblor Script
 
 on:
   schedule:
-    - cron: '*/30 * * * *'   # Runs every 30 minutes
+    - cron: '*/55 * * * *'   # Runs every 30 minutes
   workflow_dispatch:         # Still lets you run it manually if needed
 
 jobs:
