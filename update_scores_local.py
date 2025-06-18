@@ -54,7 +54,7 @@ def find_best_match(name, leaderboard_names):
         if ratio > best_ratio:
             best_ratio = ratio
             best_match = lb_name
-    return best_match if best_ratio > 0.6 else None
+    return best_match if best_ratio > 0.8 else None
 
 
 def format_score(score):
