@@ -191,6 +191,7 @@ def process_participant(participant, p_index, leaderboard, round_status):
         if cut:
             for future_day in range(max(golfer_scores.keys(), default=0) + 1, 4):
                 df.iat[row_idx - 1, SCORE_COL_START + future_day] = 'CUT'
+    return day_scores, total_day4, found_any_scores
 
 def process_golfer(match_name, row_idx, leaderboard, round_status):
     lb_row = leaderboard[leaderboard['PLAYER'] == match_name].iloc[0]
