@@ -192,24 +192,9 @@ def process_participant(participant, p_index, leaderboard, round_status):
             for future_day in range(max(golfer_scores.keys(), default=0) + 1, 4):
                 df.iat[row_idx - 1, SCORE_COL_START + future_day] = 'CUT'
 
-    # Total row
-    total_row = start_row + 6
-    for d in range(4):
-        scores = [v for v in day_scores[d] if isinstance(v, int)]
-        if len(scores) >= 3:
-            total = sum(sorted(scores)[:3])
-            df.iat[total_row - 1, SCORE_COL_START + d] = format_score(total)
-            if d == 3:
-                total_day4 = total
-            logging.info(f'🏁 Day {d+1} total for {participant}: {format_score(total)}')
-        else:
-            df.iat[total_row - 1, SCORE_COL_START + d] = ''
-
-    return day_scores, total_day4, found_any_scores
-
 def process_golfer(match_name, row_idx, leaderboard, round_status):
     lb_row = leaderboard[leaderboard['PLAYER'] == match_name].iloc[0]
-    cumulative_score = 0
+    round_deltas = []
     golfer_scores = {}
     cut = False
     found_score = False
@@ -228,85 +213,79 @@ def process_golfer(match_name, row_idx, leaderboard, round_status):
         status = str(lb_row.get('SCORE', '')).strip().upper()
         today_val = str(lb_row.get('TODAY', '')).strip().upper()
 
-        # First check the SCORE exit status for all rounds (important!)
+        # Exit condition based on SCORE column
         if status in exit_codes:
             df.iat[row_idx - 1, SCORE_COL_START + d] = status
             cut = True
             logging.info(f'{match_name} marked as {status} at {col} (exit code in SCORE column)')
             break
 
-        # Then check exit codes in the round column value itself
+        # Exit condition based on round-specific value
         if val in exit_codes:
             df.iat[row_idx - 1, SCORE_COL_START + d] = val
             cut = True
             logging.info(f'{match_name} marked as {val} at {col} (exit code in round column)')
             break
 
-        # Skip current round if it hasn’t started (not complete or in progress)
         curr_round_complete = round_status.get(col, False)
         curr_round_in_progress = not curr_round_complete and round_in_progress(leaderboard, col)
+
         if not curr_round_complete and not curr_round_in_progress:
             logging.debug(f"Skipping {col} for {match_name} because it's neither complete nor in progress.")
             df.iat[row_idx - 1, SCORE_COL_START + d] = ''
             continue
 
-        # Case 1: Round is complete and score is valid
-        if curr_round_complete and val not in invalid_values and val not in exit_codes:
-            try:
+        try:
+            # Case 1: Round is complete and score is valid
+            if curr_round_complete and val not in invalid_values:
                 s = int(val)
                 over_under = s - PAR
-                cumulative_score += over_under
+                round_deltas.append(over_under)
+                cumulative_score = sum(round_deltas)
                 df.iat[row_idx - 1, SCORE_COL_START + d] = format_score(cumulative_score)
                 golfer_scores[d] = cumulative_score
                 found_score = True
                 logging.info(f'{match_name} {col}: Raw score {s} → Over/Under {format_score(over_under)}, Cumulative {format_score(cumulative_score)}')
                 continue
-            except Exception:
-                logging.warning(f'Error parsing score for {match_name} {col}: {val}')
 
-        # Case 2: Round is in progress — use SCORE for R1, TODAY for R2-R4 if round col empty
-        elif curr_round_in_progress:
-            # Determine which score to use
-            if d == 0:  # R1 uses SCORE column
-                score_to_use = status
-            else:  # R2, R3, R4 use TODAY if round column is empty or invalid
-                if val in invalid_values:
-                    score_to_use = today_val
-                else:
-                    score_to_use = val
+            # Case 2: In-progress round – use fallback score
+            elif curr_round_in_progress:
+                score_to_use = today_val if d > 0 and val in invalid_values else (status if d == 0 else val)
 
-            if score_to_use in exit_codes:
-                df.iat[row_idx - 1, SCORE_COL_START + d] = score_to_use
-                cut = True
-                logging.info(f'{match_name} has status {score_to_use} in round {col}, marked as CUT.')
-                break
+                if score_to_use in exit_codes:
+                    df.iat[row_idx - 1, SCORE_COL_START + d] = score_to_use
+                    cut = True
+                    logging.info(f'{match_name} has status {score_to_use} in round {col}, marked as CUT.')
+                    break
 
-            try:
                 if score_to_use == 'E':
                     over_under = 0
                 elif score_to_use.startswith(('+', '-')) or score_to_use.lstrip('-').isdigit():
                     over_under = int(score_to_use)
                 else:
                     raise ValueError()
-                cumulative_score += over_under
+
+                round_deltas.append(over_under)
+                cumulative_score = sum(round_deltas)
                 df.iat[row_idx - 1, SCORE_COL_START + d] = format_score(cumulative_score)
                 golfer_scores[d] = cumulative_score
                 found_score = True
                 logging.info(f'{match_name} {col}: In-progress score {score_to_use}, cumulative {format_score(cumulative_score)}')
                 continue
-            except Exception:
-                logging.warning(f"Invalid fallback score for {match_name}: {score_to_use}")
-                df.iat[row_idx - 1, SCORE_COL_START + d] = ''
-                continue
 
-        # Default: blank cell
+        except Exception as e:
+            logging.warning(f"Error processing score for {match_name} {col}: {val} ({e})")
+            df.iat[row_idx - 1, SCORE_COL_START + d] = ''
+            continue
+
+        # Default case: blank cell
         df.iat[row_idx - 1, SCORE_COL_START + d] = ''
 
     logging.info(f'Processed golfer {match_name} scores: ' +
                  ', '.join(f"{ROUND_COLS[d]}: {format_score(score)}" for d, score in golfer_scores.items()))
 
     return golfer_scores, cut, found_score
-
+    
 def update_winner_and_rankings(df, rankings):
     winner_cell_row = PARTICIPANT_START_ROW - 2
     winner_cell_col = COLUMN_OFFSET
