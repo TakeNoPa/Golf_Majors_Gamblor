@@ -10,8 +10,8 @@ URL = 'https://www.espn.com/golf/leaderboard/_/tournamentId/401703516'
 GOOGLE_SHEET_NAME = 'Golf_Majors_Gamblor'
 SHEET_NAME = 'TOURNAMENT_LEADERBOARDS'
 PAR = 70
-COLUMN_OFFSET = 26  # Column 'AA' Add 6 Each Time (20, 26, 32)
-SCORE_COL_START = 27  # Column 'AB'
+COLUMN_OFFSET = 26  # Column 'AA' -> Add 6 Each Time (20, 26, 32)
+SCORE_COL_START = 27  # Column 'AB' -> Add 1 to COLUMN_OFFSET
 BLOCK_SIZE = 7
 PARTICIPANT_START_ROW = 229  # Row 230 in Excel
 ROUND_COLS = ['R1', 'R2', 'R3', 'R4']
@@ -28,7 +28,6 @@ df = pd.DataFrame(data[1:], columns=data[0])
 # === Logging setup ===
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 
-
 def fetch_scores():
     logging.info(f'Fetching scores from ESPN leaderboard: {URL}')
     headers = {'User-Agent': 'Mozilla/5.0'}
@@ -43,20 +42,30 @@ def fetch_scores():
         logging.error(f'Error fetching leaderboard: {e}')
         return None
 
-
 def find_best_match(name, leaderboard_names):
     import difflib
-    last_name = name.split(',')[0].strip().lower() if ',' in name else name.split()[-1].lower()
+
+    name = name.strip().lower()
+    leaderboard_names_clean = [lb_name.strip().lower() for lb_name in leaderboard_names]
+
+    # First: try exact full-name match
+    for lb_name in leaderboard_names_clean:
+        if name == lb_name:
+            return next(orig for orig in leaderboard_names if orig.lower().strip() == lb_name)
+
+    # Fallback: fuzzy match on last name
+    last_name = name.split(',')[0].strip() if ',' in name else name.split()[-1]
     best_match = None
     best_ratio = 0
+
     for lb_name in leaderboard_names:
-        lb_last = lb_name.split(',')[0].strip().lower() if ',' in lb_name else lb_name.split()[-1].lower()
-        ratio = difflib.SequenceMatcher(None, last_name, lb_last).ratio()
+        lb_last = lb_name.split(',')[0].strip() if ',' in lb_name else lb_name.split()[-1]
+        ratio = difflib.SequenceMatcher(None, last_name.lower(), lb_last.lower()).ratio()
         if ratio > best_ratio:
             best_ratio = ratio
             best_match = lb_name
-    return best_match if best_ratio > 0.95 else None
 
+    return best_match if best_ratio > 0.9 else None
 
 def format_score(score):
     return 'E' if score == 0 else f'+{score}' if score > 0 else str(score)
@@ -296,21 +305,26 @@ def process_golfer(match_name, row_idx, leaderboard, round_status):
 
             try:
                 if score_to_use == 'E':
-                    over_under = 0
+                   over_under = 0
                 elif score_to_use.startswith(('+', '-')) or score_to_use.lstrip('-').isdigit():
                     over_under = int(score_to_use)
                 else:
-                    raise ValueError()
+                    raise ValueError(f"Score format not recognized: '{score_to_use}'")
+
                 cumulative_score += over_under
                 df.iat[row_idx - 1, SCORE_COL_START + d] = format_score(cumulative_score)
                 golfer_scores[d] = cumulative_score
                 found_score = True
                 logging.info(f'{match_name} {col}: In-progress score {score_to_use}, cumulative {format_score(cumulative_score)}')
                 continue
-            except Exception:
-                logging.warning(f"Invalid fallback score for {match_name}: {score_to_use}")
+            except Exception as ex:
+                logging.warning(
+                f"⚠️ Invalid fallback score for {match_name} in round {col}: "
+                f"value='{score_to_use}' (source={'TODAY' if d > 0 else 'SCORE'}), error={ex}"
+                )
                 df.iat[row_idx - 1, SCORE_COL_START + d] = ''
                 continue
+
 
         # Default: blank cell
         df.iat[row_idx - 1, SCORE_COL_START + d] = ''
@@ -332,7 +346,6 @@ def update_winner_and_rankings(df, rankings):
         rank_str = f"{i+1}{rank_suffix[i] if i < 3 else 'TH'}"
         display_text = f"{rank_str}: {name} ({format_score(score)})"
         df.iat[display_start_row - 1 + i, winner_cell_col] = display_text
-
 
 if __name__ == '__main__':
     update_sheet()
