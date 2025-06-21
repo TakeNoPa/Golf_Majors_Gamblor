@@ -10,10 +10,10 @@ URL = 'https://www.espn.com/golf/leaderboard/_/tournamentId/401703516'
 GOOGLE_SHEET_NAME = 'Golf_Majors_Gamblor'
 SHEET_NAME = 'TOURNAMENT_LEADERBOARDS'
 PAR = 70
-COLUMN_OFFSET = 26  # Column 'AA' -> Add 6 Each Time (20, 26, 32)
-SCORE_COL_START = 27  # Column 'AB' -> Add 1 to COLUMN_OFFSET
+COLUMN_OFFSET = 26  # Column numbers in Sheet -> (02 TPC)(08 Masters)(14 PGA)(20 US Open )(26 British Open)
+SCORE_COL_START = 27  # Column for participants -> Add 1 to COLUMN_OFFSET
 BLOCK_SIZE = 7
-PARTICIPANT_START_ROW = 229  # Row 230 in Excel
+PARTICIPANT_START_ROW = 229  # Row 230 in Excel(PAT Row)
 ROUND_COLS = ['R1', 'R2', 'R3', 'R4']
 PARTICIPANTS = ['PAT', 'TADGH / TADHG', 'MACKEY', 'HAYES', 'JOE', 'COOKE', 'FITZ']
 
@@ -264,16 +264,11 @@ def process_golfer(match_name, row_idx, leaderboard, round_status):
             logging.info(f'{match_name} marked as {val} at {col} (exit code in round column)')
             break
 
-        # Skip current round if it hasn’t started (not complete or in progress)
         curr_round_complete = round_status.get(col, False)
         curr_round_in_progress = not curr_round_complete and round_in_progress(leaderboard, col)
-        if not curr_round_complete and not curr_round_in_progress:
-            logging.debug(f"Skipping {col} for {match_name} because it's neither complete nor in progress.")
-            df.iat[row_idx - 1, SCORE_COL_START + d] = ''
-            continue
 
-        # Case 1: Round is complete and score is valid
-        if curr_round_complete and val not in invalid_values and val not in exit_codes:
+        # If round column has a valid finished score, use it regardless of overall round status
+        if val not in invalid_values and val not in exit_codes:
             try:
                 s = int(val)
                 over_under = s - PAR
@@ -281,21 +276,19 @@ def process_golfer(match_name, row_idx, leaderboard, round_status):
                 df.iat[row_idx - 1, SCORE_COL_START + d] = format_score(cumulative_score)
                 golfer_scores[d] = cumulative_score
                 found_score = True
-                logging.info(f'{match_name} {col}: Raw score {s} → Over/Under {format_score(over_under)}, Cumulative {format_score(cumulative_score)}')
+                logging.info(f'{match_name} {col}: Finished round score {s} → Over/Under {format_score(over_under)}, Cumulative {format_score(cumulative_score)}')
                 continue
             except Exception:
-                logging.warning(f'Error parsing score for {match_name} {col}: {val}')
+                logging.warning(f'Error parsing finished score for {match_name} {col}: {val}')
+                df.iat[row_idx - 1, SCORE_COL_START + d] = ''
+                continue
 
-        # Case 2: Round is in progress — use SCORE for R1, TODAY for R2-R4 if round col empty
+        # If no finished score but round in progress, use TODAY or SCORE fallback
         elif curr_round_in_progress:
-            # Determine which score to use
             if d == 0:  # R1 uses SCORE column
                 score_to_use = status
-            else:  # R2, R3, R4 use TODAY if round column is empty or invalid
-                if val in invalid_values:
-                    score_to_use = today_val
-                else:
-                    score_to_use = val
+            else:  # R2-R4 use TODAY if round col empty or invalid
+                score_to_use = today_val
 
             if score_to_use in exit_codes:
                 df.iat[row_idx - 1, SCORE_COL_START + d] = score_to_use
@@ -305,7 +298,7 @@ def process_golfer(match_name, row_idx, leaderboard, round_status):
 
             try:
                 if score_to_use == 'E':
-                   over_under = 0
+                    over_under = 0
                 elif score_to_use.startswith(('+', '-')) or score_to_use.lstrip('-').isdigit():
                     over_under = int(score_to_use)
                 else:
@@ -319,15 +312,15 @@ def process_golfer(match_name, row_idx, leaderboard, round_status):
                 continue
             except Exception as ex:
                 logging.warning(
-                f"⚠️ Invalid fallback score for {match_name} in round {col}: "
-                f"value='{score_to_use}' (source={'TODAY' if d > 0 else 'SCORE'}), error={ex}"
+                    f"⚠️ Invalid fallback score for {match_name} in round {col}: "
+                    f"value='{score_to_use}' (source={'TODAY' if d > 0 else 'SCORE'}), error={ex}"
                 )
                 df.iat[row_idx - 1, SCORE_COL_START + d] = ''
                 continue
 
-
-        # Default: blank cell
-        df.iat[row_idx - 1, SCORE_COL_START + d] = ''
+        # If round not complete and not in progress, blank cell
+        else:
+            df.iat[row_idx - 1, SCORE_COL_START + d] = ''
 
     logging.info(f'Processed golfer {match_name} scores: ' +
                  ', '.join(f"{ROUND_COLS[d]}: {format_score(score)}" for d, score in golfer_scores.items()))
