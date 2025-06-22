@@ -70,23 +70,36 @@ def find_best_match(name, leaderboard_names):
 def format_score(score):
     return 'E' if score == 0 else f'+{score}' if score > 0 else str(score)
 
+import re
+
 def is_start_time(value):
-    # Simple regex to detect time strings like "2:40 PM", "10:15 AM", "9:05 AM"
-    time_pattern = r'^\d{1,2}:\d{2}\s?(AM|PM)?$'
-    return bool(re.match(time_pattern, value.strip(), re.IGNORECASE))
+    if not value:
+        return False
+    # Clean the value: remove asterisks and whitespace
+    cleaned = value.strip().replace('*', '').upper()
+    # Match format like '12:34 PM'
+    return bool(re.match(r'^\d{1,2}:\d{2}\s?(AM|PM)$', cleaned))
+
 
 def round_in_progress(leaderboard, round_col):
     invalid_values = {'--', '', None, 'CUT', 'WD', 'DQ', '—'}
+    exit_codes = {'CUT', 'WD', 'DQ'}
 
     if round_col not in leaderboard.columns:
         return False
 
     if 'THRU' in leaderboard.columns:
-        thru_values = leaderboard['THRU'].astype(str).str.strip()
-        # If all THRU values are valid start times, round not started
+        # Exclude rows with exit codes
+        active_players = leaderboard[
+            ~leaderboard['SCORE'].astype(str).str.upper().isin(exit_codes)
+        ]
+
+        thru_values = active_players['THRU'].astype(str).str.strip()
         if all(is_start_time(val) for val in thru_values if val not in invalid_values):
+            logging.info("All active THRU values are valid start times — round not yet in progress.")
             return False
 
+    # Fallback check: are there any non-invalid scores?
     scores = leaderboard[round_col].astype(str).str.strip()
     today_scores = leaderboard['TODAY'].astype(str).str.strip() if 'TODAY' in leaderboard.columns else pd.Series([''] * len(leaderboard))
 
@@ -94,8 +107,8 @@ def round_in_progress(leaderboard, round_col):
     num_valid_in_today = today_scores.apply(lambda x: x not in invalid_values).sum()
 
     total = len(scores)
-    # Round in progress if some scores present in round column or any valid scores in TODAY column
     return (0 < num_valid_in_round < total) or (num_valid_in_today > 0)
+
 
 def round_complete(leaderboard, round_col):
     """
