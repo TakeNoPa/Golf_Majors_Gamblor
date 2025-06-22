@@ -70,8 +70,6 @@ def find_best_match(name, leaderboard_names):
 def format_score(score):
     return 'E' if score == 0 else f'+{score}' if score > 0 else str(score)
 
-import re
-
 def is_start_time(value):
     if not value:
         return False
@@ -79,7 +77,6 @@ def is_start_time(value):
     cleaned = value.strip().replace('*', '').upper()
     # Match format like '12:34 PM'
     return bool(re.match(r'^\d{1,2}:\d{2}\s?(AM|PM)$', cleaned))
-
 
 def round_in_progress(leaderboard, round_col):
     invalid_values = {'--', '', None, 'CUT', 'WD', 'DQ', '—'}
@@ -108,7 +105,6 @@ def round_in_progress(leaderboard, round_col):
 
     total = len(scores)
     return (0 < num_valid_in_round < total) or (num_valid_in_today > 0)
-
 
 def round_complete(leaderboard, round_col):
     """
@@ -195,7 +191,6 @@ def update_sheet():
     sheet.clear()
     sheet.update([df.columns.values.tolist()] + df.values.tolist())
     logging.info('\n✅ Gamblor Scores Updated Successfully!')
-
 
 def process_participant(participant, p_index, leaderboard, round_status):
     start_row = PARTICIPANT_START_ROW + p_index * BLOCK_SIZE
