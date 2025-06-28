@@ -71,34 +71,35 @@ def format_score(score):
     return 'E' if score == 0 else f'+{score}' if score > 0 else str(score)
 
 def is_start_time(value):
-    if not value:
-        return False
-    # Clean the value: remove asterisks and whitespace
-    cleaned = value.strip().replace('*', '').upper()
-    # Match format like '12:34 PM'
-    return bool(re.match(r'^\d{1,2}:\d{2}\s?(AM|PM)$', cleaned))
+    """Returns True if the value looks like a tee time (e.g., '7:05 AM')."""
+    return bool(re.match(r'^\d{1,2}:\d{2}\s?(AM|PM)$', value.strip(), re.IGNORECASE))
 
 def round_in_progress(leaderboard, round_col):
-    invalid_values = {'--', '', None, 'CUT', 'WD', 'DQ', '—'}
+    invalid_values = {'--', '', None, '—'}
     exit_codes = {'CUT', 'WD', 'DQ'}
+
+    # Drop any non-player rows based on PLAYER column (like headers or cut messages)
+    leaderboard = leaderboard[leaderboard['PLAYER'].astype(str).str.match(r'^[A-Za-z\s\'\-\.]+$')]
 
     if round_col not in leaderboard.columns:
         return False
 
     if 'THRU' in leaderboard.columns:
-        # Exclude exited players
+        # Exclude players who are CUT/WD/DQ
         active_players = leaderboard[
             ~leaderboard['SCORE'].astype(str).str.upper().isin(exit_codes)
         ]
 
         thru_values = active_players['THRU'].astype(str).str.strip()
+        # Acceptable non-time THRU values before play starts
+        allowed_thru_values = {'CUT', 'WD', 'DQ', '—'}
 
-        valid_thru_values = {'CUT', 'WD', 'DQ', '—'}
-        if all(is_start_time(val) or val.upper() in valid_thru_values for val in thru_values if val not in invalid_values):
-            logging.info("All active THRU values are tee times or exit codes — round not yet in progress.")
+        # If all THRU values are tee times or exit codes, round hasn't started
+        if all(is_start_time(val) or val.upper() in allowed_thru_values for val in thru_values if val not in invalid_values):
+            logging.info("✅ All active THRU values are tee times or status codes — round not yet in progress.")
             return False
 
-    # Fallback score check
+    # Fallback: check if any scores are populated in this round or 'TODAY'
     scores = leaderboard[round_col].astype(str).str.strip()
     today_scores = leaderboard['TODAY'].astype(str).str.strip() if 'TODAY' in leaderboard.columns else pd.Series([''] * len(leaderboard))
 
@@ -106,7 +107,16 @@ def round_in_progress(leaderboard, round_col):
     num_valid_in_today = today_scores.apply(lambda x: x not in invalid_values).sum()
 
     total = len(scores)
-    return (0 < num_valid_in_round < total) or (num_valid_in_today > 0)
+    in_progress = (0 < num_valid_in_round < total) or (num_valid_in_today > 0)
+
+    if in_progress:
+        logging.info("🏌️ Round appears to be in progress based on scores or TODAY column.")
+    else:
+        logging.info("🛑 No score activity detected — round not in progress.")
+
+    return in_progress
+
+
 
 def round_complete(leaderboard, round_col):
     """
