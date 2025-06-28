@@ -86,17 +86,19 @@ def round_in_progress(leaderboard, round_col):
         return False
 
     if 'THRU' in leaderboard.columns:
-        # Exclude rows with exit codes
+        # Exclude exited players
         active_players = leaderboard[
             ~leaderboard['SCORE'].astype(str).str.upper().isin(exit_codes)
         ]
 
         thru_values = active_players['THRU'].astype(str).str.strip()
-        if all(is_start_time(val) for val in thru_values if val not in invalid_values):
-            logging.info("All active THRU values are valid start times — round not yet in progress.")
+
+        valid_thru_values = {'CUT', 'WD', 'DQ', '—'}
+        if all(is_start_time(val) or val.upper() in valid_thru_values for val in thru_values if val not in invalid_values):
+            logging.info("All active THRU values are tee times or exit codes — round not yet in progress.")
             return False
 
-    # Fallback check: are there any non-invalid scores?
+    # Fallback score check
     scores = leaderboard[round_col].astype(str).str.strip()
     today_scores = leaderboard['TODAY'].astype(str).str.strip() if 'TODAY' in leaderboard.columns else pd.Series([''] * len(leaderboard))
 
