@@ -253,15 +253,19 @@ def process_golfer(match_name, row_idx, leaderboard, round_status):
     lb_row = leaderboard[leaderboard['PLAYER'] == match_name].iloc[0]
     cumulative_score = 0
     golfer_scores = {}
-    cut = False
     found_score = False
+    cut_applies_from_round = None
+    has_exit_code = False
+    exit_code_to_apply = None
 
     exit_codes = {'CUT', 'WD', 'DQ'}
     invalid_values = {'--', '', None, '—'}
 
-    # Track if the golfer was CUT but still allow R1/R2 to be logged first
-    status = str(lb_row.get('SCORE', '')).strip().upper()
-    was_cut = status in exit_codes
+    # Check for exit code in SCORE column
+    score_status = str(lb_row.get('SCORE', '')).strip().upper()
+    if score_status in exit_codes:
+        has_exit_code = True
+        exit_code_to_apply = score_status
 
     for d, col in enumerate(ROUND_COLS):
         # Ensure previous round is complete before processing current
@@ -273,13 +277,18 @@ def process_golfer(match_name, row_idx, leaderboard, round_status):
         val = str(lb_row.get(col, '')).strip().upper()
         today_val = str(lb_row.get('TODAY', '')).strip().upper()
 
+        # If round value has an exit code, apply it and stop further processing
         if val in exit_codes:
             df.iat[row_idx - 1, SCORE_COL_START + d] = val
-            cut = True
-            logging.info(f'{match_name} marked as {val} at {col} (exit code in round column)')
+            logging.info(f'❌ {match_name} marked as {val} in {col} (from round column)')
+            cut_applies_from_round = d
+            has_exit_code = True
+            exit_code_to_apply = val
             break
 
-        # If round has finished score, log it
+        curr_round_complete = round_status.get(col, False)
+        curr_round_in_progress = not curr_round_complete and round_in_progress(leaderboard, col)
+
         if val not in invalid_values and val not in exit_codes:
             try:
                 s = int(val)
@@ -291,15 +300,21 @@ def process_golfer(match_name, row_idx, leaderboard, round_status):
                 logging.info(f'{match_name} {col}: Finished round score {s} → Over/Under {format_score(over_under)}, Cumulative {format_score(cumulative_score)}')
                 continue
             except Exception:
-                logging.warning(f'Error parsing score for {match_name} {col}: {val}')
+                logging.warning(f'Error parsing finished score for {match_name} {col}: {val}')
                 df.iat[row_idx - 1, SCORE_COL_START + d] = ''
                 continue
 
-        # If round in progress, use fallback
-        curr_round_complete = round_status.get(col, False)
-        curr_round_in_progress = not curr_round_complete and round_in_progress(leaderboard, col)
-        if curr_round_in_progress:
-            score_to_use = status if d == 0 else today_val
+        elif curr_round_in_progress:
+            score_to_use = today_val if d > 0 else score_status
+
+            if score_to_use in exit_codes:
+                df.iat[row_idx - 1, SCORE_COL_START + d] = score_to_use
+                cut_applies_from_round = d
+                has_exit_code = True
+                exit_code_to_apply = score_to_use
+                logging.info(f'❌ {match_name} has status {score_to_use} in round {col} (from fallback score), marking as cut')
+                break
+
             try:
                 if score_to_use == 'E':
                     over_under = 0
@@ -315,23 +330,35 @@ def process_golfer(match_name, row_idx, leaderboard, round_status):
                 logging.info(f'{match_name} {col}: In-progress score {score_to_use}, cumulative {format_score(cumulative_score)}')
                 continue
             except Exception as ex:
-                logging.warning(f"⚠️ Invalid fallback score for {match_name} in round {col}: value='{score_to_use}' (source={'TODAY' if d > 0 else 'SCORE'}), error={ex}")
+                logging.warning(
+                    f"⚠️ Invalid fallback score for {match_name} in round {col}: "
+                    f"value='{score_to_use}' (source={'TODAY' if d > 0 else 'SCORE'}), error={ex}"
+                )
                 df.iat[row_idx - 1, SCORE_COL_START + d] = ''
                 continue
 
-        # Otherwise, blank cell
-        df.iat[row_idx - 1, SCORE_COL_START + d] = ''
+        else:
+            df.iat[row_idx - 1, SCORE_COL_START + d] = ''
 
-        # If golfer was cut and we’ve reached this far, mark remaining rounds as CUT
-        if was_cut and d >= 1:
-            logging.info(f'{match_name} was CUT — stopping after R{d}')
-            cut = True
+        # If they have an exit code and haven't reached the round it applies to yet
+        if has_exit_code and cut_applies_from_round is None:
+            cut_applies_from_round = d
             break
 
-    logging.info(f'Processed golfer {match_name} scores: ' +
+    if has_exit_code:
+        if cut_applies_from_round is not None:
+            logging.info(f"🚨 {match_name} has status '{exit_code_to_apply}' in SCORE column — will apply from round {ROUND_COLS[cut_applies_from_round]}")
+            for d in range(cut_applies_from_round, 4):
+                df.iat[row_idx - 1, SCORE_COL_START + d] = exit_code_to_apply
+            logging.info(f"❌ {match_name} marked as {exit_code_to_apply} from {ROUND_COLS[cut_applies_from_round]} onward")
+        else:
+            logging.info(f"ℹ️ {match_name} has status '{exit_code_to_apply}', but all available scores already recorded — no further rounds updated.")
+
+    logging.info(f'✅ Processed {match_name}: ' +
                  ', '.join(f"{ROUND_COLS[d]}: {format_score(score)}" for d, score in golfer_scores.items()))
 
-    return golfer_scores, cut, found_score
+    return golfer_scores, has_exit_code, found_score
+
 
 def update_winner_and_rankings(df, rankings):
     winner_cell_row = PARTICIPANT_START_ROW - 2
