@@ -6,10 +6,10 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # === Parameters ===
-URL = 'https://www.espn.com/golf/leaderboard/_/tournamentId/401703517'
+URL = 'https://www.espn.com/golf/leaderboard/_/tournamentId/401703518'
 GOOGLE_SHEET_NAME = 'Golf_Majors_Gamblor'
 SHEET_NAME = 'TOURNAMENT_LEADERBOARDS'
-PAR = 72
+PAR = 71
 COLUMN_OFFSET = 26  # Column numbers in Sheet -> (02 TPC)(08 Masters)(14 PGA)(20 US Open )(26 British Open)
 SCORE_COL_START = 27  # Column for participants -> Add 1 to COLUMN_OFFSET
 BLOCK_SIZE = 7
