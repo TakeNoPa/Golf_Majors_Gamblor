@@ -74,35 +74,71 @@ def is_start_time(value):
     """Returns True if the value looks like a tee time (e.g., '7:05 AM')."""
     return bool(re.match(r'^\d{1,2}:\d{2}\s?(AM|PM)$', value.strip(), re.IGNORECASE))
 
-def round_in_progress(leaderboard, round_col):
-    invalid_values = {'--', '', None, '—'}
-    exit_codes = {'CUT', 'WD', 'DQ'}
+def propagate_exit_status(leaderboard, round_cols):
+    # Define priority (lower index = higher priority)
+    priority = ['WD', 'DQ', 'CUT']
 
-    # Drop any non-player rows based on PLAYER column (like headers or cut messages)
+    def get_best_exit_code(row):
+        found_codes = [str(row.get(col, '')).upper() for col in round_cols]
+        # Filter only exit codes present
+        codes_present = [c for c in found_codes if c in priority]
+        if not codes_present:
+            return None
+        # Return highest priority exit code
+        for code in priority:
+            if code in codes_present:
+                return code
+        return None
+
+    leaderboard['EXIT_STATUS'] = leaderboard.apply(get_best_exit_code, axis=1)
+
+    for col in round_cols:
+        leaderboard.loc[leaderboard['EXIT_STATUS'].notna(), col] = leaderboard.loc[leaderboard['EXIT_STATUS'].notna(), 'EXIT_STATUS']
+
+    leaderboard.drop(columns=['EXIT_STATUS'], inplace=True)
+    return leaderboard
+
+def round_in_progress(leaderboard, round_col):
+    invalid_values = {'--', '', None, '—', '-'}
+    exit_codes = {'CUT', 'WD', 'DQ'}
+    allowed_thru_values = {'CUT', 'WD', 'DQ', '—'}
+
+    # Identify all round columns (assuming naming like R1, R2, R3, R4)
+    round_cols = [col for col in leaderboard.columns if col.startswith('R')]
+
+    # Propagate exit codes before any further checks
+    leaderboard = propagate_exit_status(leaderboard, round_cols)
+
+    # Drop non-player rows based on PLAYER column (only letters, spaces, apostrophes, dashes, dots)
     leaderboard = leaderboard[leaderboard['PLAYER'].astype(str).str.match(r'^[A-Za-z\s\'\-\.]+$')]
 
     if round_col not in leaderboard.columns:
+        logging.warning(f"Round column '{round_col}' not found in leaderboard.")
         return False
 
     if 'THRU' in leaderboard.columns:
-        # Exclude players who are CUT/WD/DQ
         active_players = leaderboard[
             ~leaderboard['SCORE'].astype(str).str.upper().isin(exit_codes)
         ]
 
-        thru_values = active_players['THRU'].astype(str).str.strip()
-        # Acceptable non-time THRU values before play starts
-        allowed_thru_values = {'CUT', 'WD', 'DQ', '—'}
+        thru_values = active_players['THRU'].astype(str).str.strip().str.replace('\u2014', '-', regex=False)
 
-        # If all THRU values are tee times or exit codes, round hasn't started
-        if all(is_start_time(val) or val.upper() in allowed_thru_values for val in thru_values if val not in invalid_values):
-            logging.info("✅ All active THRU values are tee times or status codes — round not yet in progress.")
+        def is_start_time(value):
+            return bool(re.match(r'^\d{1,2}:\d{2}\s?(AM|PM)\*?$', value.strip(), re.IGNORECASE))
+
+        bad_vals = [
+            val for val in thru_values
+            if val not in invalid_values and not is_start_time(val) and val.upper() not in allowed_thru_values
+        ]
+
+        if bad_vals:
+            logging.warning(f"❌ These THRU values failed the tee-time/exit check: {bad_vals}")
+        else:
+            logging.info("✅ All active THRU values are tee times or exit codes — round not yet in progress.")
             return False
 
-    # Fallback: check if any scores are populated in this round or 'TODAY'
     scores = leaderboard[round_col].astype(str).str.strip()
     today_scores = leaderboard['TODAY'].astype(str).str.strip() if 'TODAY' in leaderboard.columns else pd.Series([''] * len(leaderboard))
-
     num_valid_in_round = scores.apply(lambda x: x not in invalid_values).sum()
     num_valid_in_today = today_scores.apply(lambda x: x not in invalid_values).sum()
 
@@ -116,15 +152,13 @@ def round_in_progress(leaderboard, round_col):
 
     return in_progress
 
-
-
 def round_complete(leaderboard, round_col):
     """
     A round is complete only when:
     - All players have a score in that round OR
     - They have exited (CUT, WD, DQ)
     """
-    invalid_values = {'--', '', None, '—'}
+    invalid_values = {'--', '', None, '—', '-'}
     exit_codes = {'CUT', 'WD', 'DQ'}
 
     if round_col not in leaderboard.columns or 'SCORE' not in leaderboard.columns:
@@ -259,7 +293,7 @@ def process_golfer(match_name, row_idx, leaderboard, round_status):
     exit_code_to_apply = None
 
     exit_codes = {'CUT', 'WD', 'DQ'}
-    invalid_values = {'--', '', None, '—'}
+    invalid_values = {'--', '', None, '—', '-'}
 
     # Check for exit code in SCORE column
     score_status = str(lb_row.get('SCORE', '')).strip().upper()
