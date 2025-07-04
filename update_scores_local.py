@@ -131,12 +131,6 @@ def round_in_progress(leaderboard, round_col):
             if val not in invalid_values and not is_start_time(val) and val.upper() not in allowed_thru_values
         ]
 
-        if bad_vals:
-            logging.warning(f"❌ These THRU values failed the tee-time/exit check: {bad_vals}")
-        else:
-            logging.info("✅ All active THRU values are tee times or exit codes — round not yet in progress.")
-            return False
-
     scores = leaderboard[round_col].astype(str).str.strip()
     today_scores = leaderboard['TODAY'].astype(str).str.strip() if 'TODAY' in leaderboard.columns else pd.Series([''] * len(leaderboard))
     num_valid_in_round = scores.apply(lambda x: x not in invalid_values).sum()
